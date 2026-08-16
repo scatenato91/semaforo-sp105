@@ -235,7 +235,7 @@ button.azione.reset{color:var(--tenue);font-weight:500}
   <section class="blocco">
     <h2>Impostazioni</h2>
     <label class="opzione">
-      <span>Avviso 1 minuto prima<small>vibrazione e suono</small></span>
+      <span>Avviso 1 minuto prima<small>suono, e vibrazione dove supportata</small></span>
       <input type="checkbox" id="opt-preavviso">
     </label>
     <label class="opzione">
@@ -529,7 +529,9 @@ function disegna(){
   if(preavviso && el.optPreavviso.checked && vistoPre !== ciclo){
     vistoPre = ciclo;
     vibra([220]);
-    if(el.optSuono.checked) bip(520,.18,.32);
+    // Il bip non dipende da "suono al verde": iOS non vibra affatto, quindi
+    // legarlo all'altra opzione renderebbe il preavviso muto su iPhone.
+    bip(520,.18,.32);
   }
 
   // Aggiorno l'elenco quando cambia il minuto, non a ogni fotogramma.
@@ -556,7 +558,20 @@ el.optPreavviso.checked = pref.get("preavviso", true);
 el.optSuono.checked     = pref.get("suono", false);
 el.optSchermo.checked   = false;   // mai attivo di default: consuma batteria
 
-el.optPreavviso.addEventListener("change", e => { pref.set("preavviso", e.target.checked); if(e.target.checked) vibra([40]); });
+el.optPreavviso.addEventListener("change", e => {
+  pref.set("preavviso", e.target.checked);
+  if(e.target.checked){ abilitaAudio(); bip(520,.12,.3); vibra([40]); }
+});
+
+/* L'audio si sblocca solo dopo un'interazione. Se le opzioni sono gia' attive
+   da una sessione precedente, nessuno tocca gli interruttori: senza questo,
+   il primo avviso dopo l'apertura sarebbe muto. */
+addEventListener("pointerdown", function sblocca(){
+  if(el.optSuono.checked || el.optPreavviso.checked){
+    abilitaAudio();
+    removeEventListener("pointerdown", sblocca);
+  }
+}, {passive:true});
 el.optSuono.addEventListener("change", e => {
   pref.set("suono", e.target.checked);
   if(e.target.checked){ abilitaAudio(); bip(880,.12,.35); }

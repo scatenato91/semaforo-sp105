@@ -11,7 +11,7 @@
 
 /* Alzare questo numero a ogni modifica dei file: e' cio' che fa scattare
    il rinnovo della cache sui dispositivi gia' installati. */
-const VERSIONE = "sp105-v1";
+const VERSIONE = "sp105-v2";
 
 const RISORSE = [
   "./",
