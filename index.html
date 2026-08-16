@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Stato in tempo reale del semaforo SP 105 tra Itri e Sperlonga, con countdown al prossimo verde.">
+<title>Semaforo SP 105 · Itri ⇄ Sperlonga</title>
+
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icona-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<!-- iOS non legge il manifest: a schermo intero ci va con i propri meta. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Semaforo SP105">
+<style>
+/* ---------------------------------------------------------------------------
+   Tutto inline e senza risorse esterne: l'app deve funzionare offline, perche'
+   sulla SP 105 il segnale cellulare non e' garantito.
+   --------------------------------------------------------------------------- */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --sfondo:#0d1117;
+  --carta:#161b22;
+  --bordo:#232a34;
+  --testo:#e6edf3;
+  --tenue:#8b949e;
+  --verde:#2ea043;
+  --verde-chiaro:#3fb950;
+  --rosso:#da3633;
+  --rosso-chiaro:#f85149;
+  --ambra:#d29922;
+  --raggio:16px;
+}
+
+html,body{height:100%}
+body{
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #17202b 0%, transparent 70%),
+    var(--sfondo);
+  color:var(--testo);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-variant-numeric:tabular-nums;      /* i numeri non devono ballare */
+  -webkit-text-size-adjust:100%;
+  display:flex;justify-content:center;
+  padding:max(16px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom));
+}
+
+.app{width:100%;max-width:480px;display:flex;flex-direction:column;gap:18px}
+
+/* ---- intestazione ---- */
+header{text-align:center}
+h1{font-size:1.05rem;font-weight:650;letter-spacing:.02em}
+header p{color:var(--tenue);font-size:.8rem;margin-top:2px}
+
+/* ---- selettore di direzione ---- */
+.switch{
+  display:grid;grid-template-columns:1fr 1fr;gap:4px;
+  background:var(--carta);border:1px solid var(--bordo);
+  border-radius:var(--raggio);padding:4px;position:relative;
+}
+.switch button{
+  appearance:none;border:0;background:transparent;color:var(--tenue);
+  font:inherit;font-size:.86rem;font-weight:600;
+  padding:12px 6px;border-radius:12px;cursor:pointer;
+  transition:color .18s ease, background .18s ease;
+  line-height:1.25;
+}
+.switch button[aria-pressed="true"]{background:#232b36;color:var(--testo)}
+.switch button small{display:block;font-weight:400;font-size:.7rem;opacity:.65;margin-top:2px}
+
+/* ---- semaforo ---- */
+.pannello{
+  background:var(--carta);border:1px solid var(--bordo);border-radius:20px;
+  padding:26px 20px 22px;text-align:center;
+}
+
+/* L'anello mostra la posizione dentro il ciclo di 22 minuti: il colpo d'occhio
+   dice "quanto manca" prima ancora di leggere il countdown. */
+.anello{
+  --p:0;                                   /* 0..1, aggiornato da JS */
+  --colore:var(--rosso);
+  width:min(232px,62vw);aspect-ratio:1;margin:0 auto;
+  border-radius:50%;display:grid;place-items:center;
+  background:conic-gradient(var(--colore) calc(var(--p)*360deg), #21262d 0);
+  /* Nessuna transition su --p: l'anello e' gia' ridisegnato a ogni fotogramma,
+     una transizione lo farebbe solo inseguire in ritardo. */
+}
+.lampada{
+  width:82%;aspect-ratio:1;border-radius:50%;
+  background:var(--carta);
+  display:grid;place-items:center;
+  box-shadow:inset 0 0 0 1px var(--bordo);
+}
+.bulbo{
+  width:82%;aspect-ratio:1;border-radius:50%;
+  background:radial-gradient(circle at 34% 30%, #ff8a80 0%, var(--rosso) 45%, #8e1512 100%);
+  box-shadow:0 0 46px -6px var(--rosso);
+  transition:background .25s ease, box-shadow .25s ease;
+}
+/* Durante il verde la lampada pulsa: si vede anche con lo smartphone appoggiato
+   sul cruscotto, senza doverlo guardare in faccia. */
+.stato-verde .bulbo{
+  background:radial-gradient(circle at 34% 30%, #9ff5b0 0%, var(--verde) 45%, #14532d 100%);
+  box-shadow:0 0 60px -4px var(--verde-chiaro);
+  animation:battito 1s ease-in-out infinite;
+}
+@keyframes battito{50%{transform:scale(.955)}}
+
+/* Ultimo minuto di rosso: avviso senza mentire sul colore reale del semaforo. */
+.stato-preavviso .anello{--colore:var(--ambra)}
+.stato-preavviso .etichetta{color:var(--ambra)}
+
+.etichetta{
+  margin-top:18px;font-size:1.45rem;font-weight:750;letter-spacing:.06em;
+  color:var(--rosso-chiaro);
+}
+.stato-verde .etichetta{color:var(--verde-chiaro)}
+.sotto{color:var(--tenue);font-size:.8rem;margin-top:4px}
+
+.countdown{
+  font-size:clamp(2.9rem,17vw,3.9rem);font-weight:250;line-height:1.05;
+  margin-top:14px;letter-spacing:-.02em;
+}
+.countdown-nota{color:var(--tenue);font-size:.78rem;margin-top:2px}
+
+/* ---- elenchi e righe ---- */
+.blocco{background:var(--carta);border:1px solid var(--bordo);border-radius:var(--raggio);padding:14px 16px}
+.blocco h2{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--tenue);font-weight:600;margin-bottom:10px}
+.prossimi{display:flex;gap:8px;flex-wrap:wrap}
+.prossimi span{
+  background:#1c232c;border:1px solid var(--bordo);border-radius:999px;
+  padding:6px 11px;font-size:.85rem;
+}
+.prossimi span:first-child{border-color:#2d5a37;color:var(--verde-chiaro)}
+
+.riga{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:7px 0;font-size:.86rem}
+.riga+.riga{border-top:1px solid var(--bordo)}
+.riga .val{color:var(--tenue)}
+.pallino{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--rosso);margin-right:7px;vertical-align:baseline}
+.pallino.on{background:var(--verde-chiaro)}
+
+/* ---- interruttori ---- */
+.opzione{display:flex;justify-content:space-between;align-items:center;padding:9px 0;font-size:.88rem}
+.opzione+.opzione{border-top:1px solid var(--bordo)}
+.opzione small{display:block;color:var(--tenue);font-size:.74rem;margin-top:2px}
+input[type=checkbox]{appearance:none;width:44px;height:26px;border-radius:999px;background:#2b323c;position:relative;cursor:pointer;flex:0 0 auto;transition:background .18s}
+input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .18s}
+input[type=checkbox]:checked{background:var(--verde)}
+input[type=checkbox]:checked::after{transform:translateX(18px)}
+
+button.azione{
+  appearance:none;width:100%;font:inherit;font-size:.86rem;font-weight:600;
+  color:var(--testo);background:#1c232c;border:1px solid var(--bordo);
+  border-radius:12px;padding:12px;cursor:pointer;margin-top:10px;
+}
+button.azione:active{background:#242c37}
+button.azione.reset{color:var(--tenue);font-weight:500}
+
+/* ---- barra di aggiornamento ---- */
+.aggiorna{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:#1b2a1e;border:1px solid #2d5a37;border-radius:12px;
+  padding:10px 12px;font-size:.82rem;
+}
+/* Senza questa riga il display:flex qui sopra batte la regola [hidden] del
+   browser e la barra resta visibile anche da nascosta. */
+.aggiorna[hidden]{display:none}
+.aggiorna button{
+  appearance:none;border:0;background:var(--verde);color:#04140a;
+  font:inherit;font-weight:700;font-size:.78rem;
+  border-radius:8px;padding:7px 12px;cursor:pointer;flex:0 0 auto;
+}
+
+.avviso{
+  font-size:.75rem;color:var(--tenue);line-height:1.5;text-align:center;
+  border-top:1px solid var(--bordo);padding-top:14px;
+}
+.avviso strong{color:#b9c2cc}
+
+:focus-visible{outline:2px solid var(--verde-chiaro);outline-offset:3px}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <header>
+    <h1>SEMAFORO SP 105</h1>
+    <p>Senso unico alternato · ciclo di 22 minuti</p>
+  </header>
+
+  <div class="aggiorna" id="aggiorna" hidden>
+    <span>È disponibile una versione aggiornata.</span>
+    <button type="button" id="btn-aggiorna">Aggiorna</button>
+  </div>
+
+  <div class="switch" role="group" aria-label="Scelta della direzione di marcia">
+    <button type="button" id="btn-si" aria-pressed="true">Sperlonga → Itri<small>verso l'interno</small></button>
+    <button type="button" id="btn-is" aria-pressed="false">Itri → Sperlonga<small>verso il mare</small></button>
+  </div>
+
+  <section class="pannello">
+    <div class="anello" id="anello" aria-hidden="true">
+      <div class="lampada"><div class="bulbo"></div></div>
+    </div>
+
+    <div class="etichetta" id="etichetta" role="status" aria-live="polite">—</div>
+    <div class="sotto" id="fase">calcolo in corso…</div>
+
+    <div class="countdown" id="countdown">--:--</div>
+    <div class="countdown-nota" id="countdown-nota">al prossimo verde</div>
+  </section>
+
+  <section class="blocco">
+    <h2>Prossimi verdi</h2>
+    <div class="prossimi" id="prossimi"></div>
+  </section>
+
+  <section class="blocco">
+    <h2>Riepilogo</h2>
+    <div class="riga"><span id="altra-dir">Altra direzione</span><span class="val"><span class="pallino" id="altra-pallino"></span><span id="altra-val">—</span></span></div>
+    <div class="riga"><span>Ora del dispositivo</span><span class="val" id="orologio">—</span></div>
+    <div class="riga"><span>Riferimento</span><span class="val" id="riferimento">—</span></div>
+    <div class="riga"><span>Uso senza rete</span><span class="val" id="offline">verifica…</span></div>
+  </section>
+
+  <section class="blocco">
+    <h2>Impostazioni</h2>
+    <label class="opzione">
+      <span>Avviso 1 minuto prima<small>vibrazione e suono</small></span>
+      <input type="checkbox" id="opt-preavviso">
+    </label>
+    <label class="opzione">
+      <span>Suono al verde<small>bip generato dal dispositivo</small></span>
+      <input type="checkbox" id="opt-suono">
+    </label>
+    <label class="opzione">
+      <span>Schermo sempre acceso<small>mentre l'app è in primo piano</small></span>
+      <input type="checkbox" id="opt-schermo">
+    </label>
+    <button type="button" class="azione" id="btn-calibra">Il verde è scattato adesso</button>
+    <button type="button" class="azione reset" id="btn-reset" hidden>Ripristina orari ufficiali</button>
+  </section>
+
+  <p class="avviso">
+    <strong>Stima basata su un orario fisso.</strong> Cantieri, guasti o
+    ritarature spostano il ciclo reale. Guarda sempre il semaforo:
+    questa pagina non lo sostituisce.
+  </p>
+</div>
+
+<script>
+"use strict";
+
+/* ===========================================================================
+   1. MODELLO
+   ---------------------------------------------------------------------------
+   Un solo istante di riferimento per direzione, piu' l'operazione modulo.
+
+   L'anticipo di 10 minuti al giorno NON va programmato: e' una conseguenza
+   del modulo. 86400 s = 65 cicli da 1320 s + 600 s di resto, quindi allo
+   stesso orario del giorno dopo siamo 600 s dentro il ciclo, cioe' il verde
+   e' passato 10 minuti prima. Aggiungere una correzione esplicita
+   significherebbe contarlo due volte.
+
+   Gli istanti hanno l'offset +02:00 esplicito. Senza, "2026-08-16T16:23:10"
+   verrebbe letto nel fuso del dispositivo: un telefono ancora su un altro
+   fuso, o l'ora legale, sfaserebbero tutto. Il semaforo e' un temporizzatore
+   fisico: conta l'istante assoluto, non l'ora sull'orologio.
+   =========================================================================== */
+
+const CICLO  = 1320;   // 22 minuti
+const VERDE  = 20;     // durata del verde
+const ROSSO1 = 600, ROSSO2 = 600, ROSSO3 = 100;   // 20+600+600+100 = 1320
+
+const DIREZIONI = {
+  si:{ id:"si", nome:"Sperlonga → Itri", breve:"Sperlonga→Itri",
+       epoca:Date.parse("2026-08-16T16:23:10+02:00") },
+  is:{ id:"is", nome:"Itri → Sperlonga", breve:"Itri→Sperlonga",
+       epoca:Date.parse("2026-08-16T10:42:00+02:00") }
+};
+
+/* Posizione nel ciclo, in secondi con i decimali (servono all'anello). */
+function fase(ms, epoca){
+  const t = (ms - epoca) / 1000;
+  return ((t % CICLO) + CICLO) % CICLO;      // corretta anche prima dell'epoca
+}
+
+function stato(ms, dir){
+  const f = fase(ms, epocaDi(dir));
+  const verde = f < VERDE;
+  return {
+    fase:f,
+    verde,
+    restaVerde: verde ? VERDE - f : 0,
+    alVerde:    verde ? 0 : CICLO - f,
+    nome: verde                    ? "Verde"
+        : f < VERDE+ROSSO1         ? "1° rosso"
+        : f < VERDE+ROSSO1+ROSSO2  ? "2° rosso"
+        :                            "3° rosso"
+  };
+}
+
+/* Inizio dei prossimi verdi, come istanti assoluti. */
+function prossimiVerdi(ms, dir, quanti){
+  const e = epocaDi(dir);
+  const k = Math.ceil((ms - e) / (CICLO*1000));
+  return Array.from({length:quanti}, (_,i) => new Date(e + (k+i)*CICLO*1000));
+}
+
+/* ===========================================================================
+   2. CALIBRAZIONE
+   ---------------------------------------------------------------------------
+   Un semaforo di cantiere viene spento, riacceso, ritarato: la fase reale puo'
+   scostarsi dai PDF. Con "il verde e' scattato adesso" l'utente riancora
+   l'epoca all'istante osservato, e da li' il modulo riparte corretto.
+   =========================================================================== */
+
+const CHIAVE = id => "sp105.calibrazione." + id;
+
+/* localStorage solleva un'eccezione in navigazione privata e quando i dati dei
+   siti sono bloccati. Non intercettarla farebbe morire tutta l'app per una
+   preferenza: qui un archivio che non funziona degrada a "nessuna memoria". */
+const mem = {
+  leggi(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } },
+  scrivi(k, v){ try{ localStorage.setItem(k, v); return true; }catch(_){ return false; } },
+  togli(k){ try{ localStorage.removeItem(k); }catch(_){} }
+};
+
+function epocaDi(dir){
+  const salvata = Number(mem.leggi(CHIAVE(dir.id)));
+  return Number.isFinite(salvata) && salvata > 0 ? salvata : dir.epoca;
+}
+function calibrata(dir){ return epocaDi(dir) !== dir.epoca; }
+
+/* I browser possono sfrattare i dati dei siti poco visitati: iOS lo fa dopo
+   7 giorni di inattivita'. Sarebbe esattamente la calibrazione a sparire,
+   e proprio quando serve. Questa richiesta rende l'archivio permanente;
+   viene concessa quasi sempre se l'app e' installata in schermata Home. */
+async function rendiPersistente(){
+  try{
+    if(navigator.storage && navigator.storage.persist &&
+       !(await navigator.storage.persisted())) await navigator.storage.persist();
+  }catch(_){}
+}
+
+/* ===========================================================================
+   3. PREFERENZE
+   =========================================================================== */
+
+const pref = {
+  get(k, def){ const v = mem.leggi("sp105."+k); return v === null ? def : v === "1"; },
+  set(k, v){ mem.scrivi("sp105."+k, v ? "1" : "0"); }
+};
+
+/* ===========================================================================
+   4. AVVISI SONORI E TATTILI
+   ---------------------------------------------------------------------------
+   Il bip e' sintetizzato con WebAudio: nessun file da scaricare, coerente con
+   il funzionamento offline. Il contesto audio si crea solo dopo un tocco,
+   altrimenti i browser lo bloccano.
+   =========================================================================== */
+
+let audio = null;
+function bip(frequenza, durata, volume){
+  if(!audio) return;
+  if(audio.state === "suspended") audio.resume();
+  const osc = audio.createOscillator(), gain = audio.createGain();
+  const t0 = audio.currentTime;
+  osc.frequency.value = frequenza;
+  osc.type = "sine";
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(volume, t0 + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + durata);
+  osc.connect(gain).connect(audio.destination);
+  osc.start(t0); osc.stop(t0 + durata + 0.05);
+}
+function abilitaAudio(){
+  if(!audio && window.AudioContext) audio = new AudioContext();
+  if(audio && audio.state === "suspended") audio.resume();
+}
+function vibra(schema){
+  if(navigator.vibrate) navigator.vibrate(schema);
+}
+
+/* ===========================================================================
+   5. SCHERMO ACCESO
+   =========================================================================== */
+
+let wakeLock = null;
+async function schermoAcceso(attiva){
+  try{
+    if(attiva && "wakeLock" in navigator){
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+    }else if(wakeLock){
+      await wakeLock.release(); wakeLock = null;
+    }
+  }catch(_){ /* batteria bassa o permesso negato: non e' un errore fatale */ }
+}
+// Il blocco cade quando la pagina va in secondo piano: va richiesto di nuovo.
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "visible" && el.optSchermo.checked) schermoAcceso(true);
+});
+
+/* ===========================================================================
+   6. INTERFACCIA
+   =========================================================================== */
+
+const el = {
+  app:document.getElementById("app"),
+  btnSI:document.getElementById("btn-si"),
+  btnIS:document.getElementById("btn-is"),
+  anello:document.getElementById("anello"),
+  etichetta:document.getElementById("etichetta"),
+  fase:document.getElementById("fase"),
+  countdown:document.getElementById("countdown"),
+  nota:document.getElementById("countdown-nota"),
+  prossimi:document.getElementById("prossimi"),
+  altraDir:document.getElementById("altra-dir"),
+  altraPallino:document.getElementById("altra-pallino"),
+  altraVal:document.getElementById("altra-val"),
+  orologio:document.getElementById("orologio"),
+  riferimento:document.getElementById("riferimento"),
+  optPreavviso:document.getElementById("opt-preavviso"),
+  optSuono:document.getElementById("opt-suono"),
+  optSchermo:document.getElementById("opt-schermo"),
+  btnCalibra:document.getElementById("btn-calibra"),
+  btnReset:document.getElementById("btn-reset"),
+  offline:document.getElementById("offline"),
+  aggiorna:document.getElementById("aggiorna"),
+  btnAggiorna:document.getElementById("btn-aggiorna")
+};
+
+const mmss = s => {
+  s = Math.max(0, Math.ceil(s));
+  return String(Math.floor(s/60)).padStart(2,"0") + ":" + String(s%60).padStart(2,"0");
+};
+const ora = d => d.toLocaleTimeString("it-IT", {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+
+/* La direzione sta anche nell'URL: il link condiviso apre gia' quella giusta. */
+let corrente = DIREZIONI[location.hash.slice(1)] ||
+               DIREZIONI[mem.leggi("sp105.direzione")] ||
+               DIREZIONI.si;
+
+function scegli(dir){
+  corrente = dir;
+  mem.scrivi("sp105.direzione", dir.id);
+  history.replaceState(null, "", "#" + dir.id);
+  el.btnSI.setAttribute("aria-pressed", String(dir.id === "si"));
+  el.btnIS.setAttribute("aria-pressed", String(dir.id === "is"));
+  document.title = "Semaforo · " + dir.nome;
+  visto = null;                       // niente avvisi retroattivi al cambio
+  aggiornaProssimi();
+  aggiornaRiferimento();
+  disegna();
+}
+
+function aggiornaProssimi(){
+  el.prossimi.innerHTML = "";
+  for(const d of prossimiVerdi(Date.now(), corrente, 5)){
+    const s = document.createElement("span");
+    s.textContent = d.toLocaleTimeString("it-IT", {hour:"2-digit",minute:"2-digit"}) +
+                    ":" + String(d.getSeconds()).padStart(2,"0");
+    el.prossimi.appendChild(s);
+  }
+}
+
+function aggiornaRiferimento(){
+  const cal = calibrata(corrente);
+  el.riferimento.textContent = cal
+    ? "calibrato " + new Date(epocaDi(corrente)).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})
+    : "orari ufficiali";
+  el.btnReset.hidden = !cal;
+}
+
+/* Stato dell'ultimo avviso emesso, per non ripeterlo a ogni fotogramma. */
+let visto = null;          // ciclo gia' annunciato come verde
+let vistoPre = null;       // ciclo gia' annunciato come preavviso
+let ultimoMinuto = -1;
+
+function disegna(){
+  const ms = Date.now();
+  const s  = stato(ms, corrente);
+  const preavviso = !s.verde && s.alVerde <= 60;
+
+  // Anello: durante il rosso si riempie avvicinandosi al verde,
+  // durante il verde si svuota mostrando quanto resta.
+  el.anello.style.setProperty("--p", s.verde ? s.restaVerde/VERDE : s.fase/CICLO);
+
+  el.app.classList.toggle("stato-verde", s.verde);
+  el.app.classList.toggle("stato-preavviso", preavviso);
+
+  if(s.verde){
+    el.etichetta.textContent = "VERDE · PASSA";
+    el.countdown.textContent = Math.ceil(s.restaVerde) + "s";
+    el.nota.textContent = "di verde rimanenti";
+  }else{
+    el.etichetta.textContent = preavviso ? "ROSSO · PREPARATI" : "ROSSO";
+    el.countdown.textContent = mmss(s.alVerde);
+    el.nota.textContent = "al prossimo verde";
+  }
+  el.fase.textContent = corrente.nome + " · " + s.nome;
+  el.orologio.textContent = ora(new Date(ms));
+
+  // Direzione opposta, utile per capire chi sta passando adesso.
+  const altra = corrente.id === "si" ? DIREZIONI.is : DIREZIONI.si;
+  const sa = stato(ms, altra);
+  el.altraDir.textContent = altra.nome;
+  el.altraPallino.classList.toggle("on", sa.verde);
+  el.altraVal.textContent = sa.verde ? "verde ora" : "verde tra " + mmss(sa.alVerde);
+
+  // --- avvisi ---
+  const ciclo = Math.floor((ms - epocaDi(corrente)) / (CICLO*1000));
+  if(s.verde && visto !== ciclo){
+    visto = ciclo;
+    if(el.optSuono.checked){ bip(880,.16,.5); setTimeout(()=>bip(1175,.22,.5),200); }
+    if(el.optPreavviso.checked) vibra([120,80,120,80,240]);
+    aggiornaProssimi();
+  }
+  if(preavviso && el.optPreavviso.checked && vistoPre !== ciclo){
+    vistoPre = ciclo;
+    vibra([220]);
+    if(el.optSuono.checked) bip(520,.18,.32);
+  }
+
+  // Aggiorno l'elenco quando cambia il minuto, non a ogni fotogramma.
+  const min = new Date(ms).getMinutes();
+  if(min !== ultimoMinuto){ ultimoMinuto = min; aggiornaProssimi(); }
+}
+
+/* Il ciclo di disegno rilegge Date.now() ogni volta: nessun accumulo di
+   errore, a differenza di un setInterval che conta i propri tick. */
+function ciclaDisegno(){ disegna(); requestAnimationFrame(ciclaDisegno); }
+
+/* ===========================================================================
+   7. EVENTI
+   =========================================================================== */
+
+el.btnSI.addEventListener("click", () => scegli(DIREZIONI.si));
+el.btnIS.addEventListener("click", () => scegli(DIREZIONI.is));
+window.addEventListener("hashchange", () => {
+  const d = DIREZIONI[location.hash.slice(1)];
+  if(d && d !== corrente) scegli(d);
+});
+
+el.optPreavviso.checked = pref.get("preavviso", true);
+el.optSuono.checked     = pref.get("suono", false);
+el.optSchermo.checked   = false;   // mai attivo di default: consuma batteria
+
+el.optPreavviso.addEventListener("change", e => { pref.set("preavviso", e.target.checked); if(e.target.checked) vibra([40]); });
+el.optSuono.addEventListener("change", e => {
+  pref.set("suono", e.target.checked);
+  if(e.target.checked){ abilitaAudio(); bip(880,.12,.35); }
+});
+el.optSchermo.addEventListener("change", e => schermoAcceso(e.target.checked));
+
+el.btnCalibra.addEventListener("click", () => {
+  const salvato = mem.scrivi(CHIAVE(corrente.id), String(Date.now()));
+  visto = vistoPre = null;
+  aggiornaRiferimento(); aggiornaProssimi();
+  vibra([40]);
+  if(salvato) rendiPersistente();
+  else el.riferimento.textContent = "memoria non disponibile";
+});
+el.btnReset.addEventListener("click", () => {
+  mem.togli(CHIAVE(corrente.id));
+  visto = vistoPre = null;
+  aggiornaRiferimento(); aggiornaProssimi();
+});
+
+/* ===========================================================================
+   8. INSTALLAZIONE E USO SENZA RETE
+   ---------------------------------------------------------------------------
+   Il service worker richiede HTTPS (localhost escluso). Aperto da file:// non
+   si registra: l'app funziona lo stesso, ma senza installazione e senza la
+   garanzia che il browser conservi la calibrazione.
+   =========================================================================== */
+
+if("serviceWorker" in navigator){
+  window.addEventListener("load", async () => {
+    try{
+      const reg = await navigator.serviceWorker.register("sw.js");
+
+      // Versione nuova pronta, ma solo se una vecchia era gia' attiva:
+      // alla primissima installazione non c'e' niente da annunciare.
+      const proponi = w => {
+        w.addEventListener("statechange", () => {
+          if(w.state === "installed" && navigator.serviceWorker.controller) el.aggiorna.hidden = false;
+        });
+      };
+      if(reg.waiting && navigator.serviceWorker.controller) el.aggiorna.hidden = false;
+      if(reg.installing) proponi(reg.installing);
+      reg.addEventListener("updatefound", () => reg.installing && proponi(reg.installing));
+
+      el.btnAggiorna.addEventListener("click", () => {
+        (reg.waiting || reg.active)?.postMessage("attiva-subito");
+        el.aggiorna.hidden = true;
+      });
+      navigator.serviceWorker.addEventListener("controllerchange", () => location.reload());
+
+      el.offline.textContent = navigator.serviceWorker.controller ? "pronta" : "al prossimo avvio";
+    }catch(_){
+      el.offline.textContent = location.protocol === "file:"
+        ? "serve un indirizzo https" : "non disponibile";
+    }
+  });
+}else{
+  el.offline.textContent = location.protocol === "file:"
+    ? "serve un indirizzo https" : "non supportato";
+}
+
+scegli(corrente);
+ciclaDisegno();
+rendiPersistente();
+</script>
+</body>
+</html>
