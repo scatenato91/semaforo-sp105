@@ -11,11 +11,12 @@
 
 /* Alzare questo numero a ogni modifica dei file: e' cio' che fa scattare
    il rinnovo della cache sui dispositivi gia' installati. */
-const VERSIONE = "sp105-v2";
+const VERSIONE = "sp105-v8";
 
 const RISORSE = [
   "./",
   "./index.html",
+  "./sync.json",
   "./manifest.webmanifest",
   "./icona-192.png",
   "./icona-512.png",
@@ -43,6 +44,23 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const req = e.request;
   if(req.method !== "GET") return;
+
+  /* sync.json e' l'unica risorsa che deve preferire la rete: e' il canale con
+     cui una ritaratura del semaforo raggiunge tutti i dispositivi. Servirlo
+     dalla cache come il resto lo renderebbe inutile. Senza rete si ricade
+     sull'ultima copia, che e' comunque meglio degli orari nel codice. */
+  if(new URL(req.url).pathname.endsWith("/sync.json")){
+    e.respondWith(
+      fetch(req).then(risp => {
+        if(risp && risp.ok){
+          const copia = risp.clone();
+          caches.open(VERSIONE).then(c => c.put(req, copia));
+        }
+        return risp;
+      }).catch(() => caches.match(req, {ignoreSearch:true}))
+    );
+    return;
+  }
 
   // Le navigazioni ricadono sempre sull'index in cache: aprire l'app senza
   // rete non deve mai mostrare la pagina di errore del browser.

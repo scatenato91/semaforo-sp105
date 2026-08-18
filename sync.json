@@ -1,0 +1,9 @@
+{
+  "versione": 1,
+  "aggiornato": "2026-08-18T23:55:00+02:00",
+  "nota": "Epoche in vigore per tutti i dispositivi. Modificare questo file e' il modo di ritarare il semaforo senza toccare il codice: l'app lo rilegge da sola. Cambiando un'epoca vanno rifatti i conti sulla separazione dei due sensi, vedi README.",
+  "epoche": {
+    "si": "2026-08-18T18:33:24+02:00",
+    "is": "2026-08-18T12:01:36+02:00"
+  }
+}

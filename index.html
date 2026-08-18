@@ -176,6 +176,20 @@ button.azione.reset{color:var(--tenue);font-weight:500}
   border-radius:8px;padding:7px 12px;cursor:pointer;flex:0 0 auto;
 }
 
+/* ---- pannello di pubblicazione ---- */
+#pannello-pubblica[hidden]{display:none}
+.nota-pub{color:var(--tenue);font-size:.78rem;line-height:1.5;margin-bottom:12px}
+.nota-pub code{background:#1c232c;padding:1px 5px;border-radius:5px;font-size:.9em}
+.campo{display:block;margin-bottom:10px}
+.campo span{display:block;font-size:.74rem;color:var(--tenue);margin-bottom:5px}
+.campo input{
+  width:100%;font:inherit;font-size:.86rem;color:var(--testo);
+  background:#1c232c;border:1px solid var(--bordo);border-radius:10px;padding:11px 12px;
+}
+.esito{font-size:.78rem;line-height:1.5;margin-top:10px;color:var(--tenue)}
+.esito.ok{color:var(--verde-chiaro)}
+.esito.ko{color:var(--rosso-chiaro)}
+
 .avviso{
   font-size:.75rem;color:var(--tenue);line-height:1.5;text-align:center;
   border-top:1px solid var(--bordo);padding-top:14px;
@@ -194,7 +208,9 @@ button.azione.reset{color:var(--tenue);font-weight:500}
 
   <header>
     <h1>SEMAFORO SP 105</h1>
-    <p>Senso unico alternato · ciclo di 22 minuti</p>
+    <!-- Scritta dal codice a partire dalle costanti: un sottotitolo copiato a
+         mano è la prima cosa che diventa falsa quando il modello cambia. -->
+    <p id="sottotitolo">Senso unico alternato</p>
   </header>
 
   <div class="aggiorna" id="aggiorna" hidden>
@@ -229,6 +245,7 @@ button.azione.reset{color:var(--tenue);font-weight:500}
     <div class="riga"><span id="altra-dir">Altra direzione</span><span class="val"><span class="pallino" id="altra-pallino"></span><span id="altra-val">—</span></span></div>
     <div class="riga"><span>Ora del dispositivo</span><span class="val" id="orologio">—</span></div>
     <div class="riga"><span>Riferimento</span><span class="val" id="riferimento">—</span></div>
+    <div class="riga"><span>Calibrazione condivisa</span><span class="val" id="sync">—</span></div>
     <div class="riga"><span>Uso senza rete</span><span class="val" id="offline">verifica…</span></div>
   </section>
 
@@ -250,6 +267,21 @@ button.azione.reset{color:var(--tenue);font-weight:500}
     <button type="button" class="azione reset" id="btn-reset" hidden>Ripristina orari ufficiali</button>
   </section>
 
+  <section class="blocco" id="pannello-pubblica" hidden>
+    <h2>Pubblicazione</h2>
+    <p class="nota-pub">Riscrive <code>sync.json</code> nel repository: la
+    calibrazione di questo dispositivo diventa quella valida per tutti.</p>
+    <label class="campo"><span>Repository</span>
+      <input type="text" id="pub-repo" placeholder="utente/semaforo-sp105"
+             autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <label class="campo"><span>Token</span>
+      <input type="password" id="pub-token" placeholder="github_pat_…"
+             autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <button type="button" class="azione" id="btn-pubblica">Pubblica per tutti</button>
+    <button type="button" class="azione reset" id="btn-scorda" hidden>Dimentica il token</button>
+    <div class="esito" id="pub-esito"></div>
+  </section>
+
   <p class="avviso">
     <strong>Stima basata su un orario fisso.</strong> Cantieri, guasti o
     ritarature spostano il ciclo reale. Guarda sempre il semaforo:
@@ -265,11 +297,14 @@ button.azione.reset{color:var(--tenue);font-weight:500}
    ---------------------------------------------------------------------------
    Un solo istante di riferimento per direzione, piu' l'operazione modulo.
 
-   L'anticipo di 10 minuti al giorno NON va programmato: e' una conseguenza
-   del modulo. 86400 s = 65 cicli da 1320 s + 600 s di resto, quindi allo
-   stesso orario del giorno dopo siamo 600 s dentro il ciclo, cioe' il verde
-   e' passato 10 minuti prima. Aggiungere una correzione esplicita
-   significherebbe contarlo due volte.
+   Le uniche grandezze imposte sono le quattro durate di fase. Tutto il resto
+   e' conseguenza del modulo, e non va MAI scritto nel codice.
+
+   In particolare l'anticipo giornaliero. 86400 s non e' un multiplo di 1356 s:
+   restano 972 s, quindi allo stesso orario del giorno dopo siamo 972 s dentro
+   il ciclo e il verde e' gia' passato da 16 min 12 s. E' un risultato, non una
+   regola: programmarlo lo conterebbe due volte. Cambiando una durata di fase
+   cambia da solo, come deve.
 
    Gli istanti hanno l'offset +02:00 esplicito. Senza, "2026-08-16T16:23:10"
    verrebbe letto nel fuso del dispositivo: un telefono ancora su un altro
@@ -277,15 +312,27 @@ button.azione.reset{color:var(--tenue);font-weight:500}
    fisico: conta l'istante assoluto, non l'ora sull'orologio.
    =========================================================================== */
 
-const CICLO  = 1320;   // 22 minuti
-const VERDE  = 20;     // durata del verde
-const ROSSO1 = 600, ROSSO2 = 600, ROSSO3 = 100;   // 20+600+600+100 = 1320
+/* Le durate misurate sono le QUATTRO FASI. Il ciclo e' la loro somma, non un
+   numero scritto a parte: tenerlo indipendente ha gia' prodotto un errore,
+   perche' allungare il verde lasciando fisso il totale accorcia di nascosto
+   un rosso. Qui allungare il verde allunga il ciclo, che e' il comportamento
+   di un temporizzatore reale. */
+const VERDE  = 56;                              // misurato sul posto
+const ROSSO1 = 600, ROSSO2 = 600, ROSSO3 = 100; // invariati rispetto ai PDF
+const CICLO  = VERDE + ROSSO1 + ROSSO2 + ROSSO3;   // 1356 s = 22 min 36 s
 
+/* I due sensi condividono lo stesso periodo, quindi il loro sfasamento e'
+   costante per sempre: 456 s. Dentro un ciclo l'ordine e'
+     Itri→Sperlonga verde 0-56 · sgombero 400 s · Sperlonga→Itri verde 456-512
+     · sgombero 844 s
+   Non si sovrappongono. Le finestre restano diverse fra loro (6m40s contro
+   14m04s) ma sono entrambe ampie; con le epoche del 16 agosto la corta valeva
+   134 s. Cambiando un'epoca vanno rifatti i conti: vedi README. */
 const DIREZIONI = {
   si:{ id:"si", nome:"Sperlonga → Itri", breve:"Sperlonga→Itri",
-       epoca:Date.parse("2026-08-16T16:23:10+02:00") },
+       epoca:Date.parse("2026-08-18T18:33:24+02:00") },
   is:{ id:"is", nome:"Itri → Sperlonga", breve:"Itri→Sperlonga",
-       epoca:Date.parse("2026-08-16T10:42:00+02:00") }
+       epoca:Date.parse("2026-08-18T12:01:36+02:00") }
 };
 
 /* Posizione nel ciclo, in secondi con i decimali (servono all'anello). */
@@ -335,11 +382,92 @@ const mem = {
   togli(k){ try{ localStorage.removeItem(k); }catch(_){} }
 };
 
-function epocaDi(dir){
-  const salvata = Number(mem.leggi(CHIAVE(dir.id)));
-  return Number.isFinite(salvata) && salvata > 0 ? salvata : dir.epoca;
+/* Una calibrazione personale scade: nasce da un'osservazione al volo, e senza
+   scadenza un aggiustamento fatto una sera resterebbe addosso per mesi,
+   scavalcando in silenzio la calibrazione condivisa corretta. L'istante
+   salvato e' anche il momento in cui e' stata fatta, quindi basta lui. */
+const DURATA_LOCALE = 24*3600*1000;
+
+function calibrazioneLocale(dir){
+  const t = Number(mem.leggi(CHIAVE(dir.id)));
+  if(!Number.isFinite(t) || t <= 0) return null;
+  return (Date.now() - t) > DURATA_LOCALE ? null : t;
 }
-function calibrata(dir){ return epocaDi(dir) !== dir.epoca; }
+
+/* Tre livelli, dal piu' specifico al piu' generale:
+   personale (questo dispositivo) → condivisa (sync.json) → ufficiale (codice). */
+function epocaDi(dir){
+  const locale = calibrazioneLocale(dir);
+  if(locale !== null) return locale;
+  if(condivisa && condivisa.epoche[dir.id]) return condivisa.epoche[dir.id];
+  return dir.epoca;
+}
+function origineDi(dir){
+  if(calibrazioneLocale(dir) !== null) return "personale";
+  if(condivisa && condivisa.epoche[dir.id]) return "condivisa";
+  return "ufficiale";
+}
+
+/* ---------------------------------------------------------------------------
+   Calibrazione condivisa: sync.json accanto all'app.
+   Non e' mai attesa. Se la rete manca — cioe' proprio nella gola dove serve —
+   si usa l'ultimo valore noto, e se non c'e' nemmeno quello si torna agli
+   orari nel codice. L'app resta identica a se stessa in modalita' aereo.
+
+   Il file trasporta SOLO le epoche. Durata del verde e del ciclo restano nel
+   codice di proposito: sono la forma del semaforo, non la sua fase, e cambiarle
+   da remoto amplierebbe senza motivo cio' che un file malformato puo' rompere.
+   --------------------------------------------------------------------------- */
+
+let condivisa = null;
+const CHIAVE_CONDIVISA = "sp105.condivisa";
+
+function validaSync(d){
+  if(!d || d.versione !== 1) return null;
+  const aggiornato = Date.parse(d.aggiornato);
+  if(!Number.isFinite(aggiornato)) return null;
+  // Datato nel futuro: quasi sempre un orologio sbagliato a monte, non un dato.
+  if(aggiornato > Date.now() + 86400000) return null;
+  const epoche = {};
+  for(const id of Object.keys(DIREZIONI)){
+    const t = Date.parse(d.epoche && d.epoche[id]);
+    if(!Number.isFinite(t)) return null;
+    epoche[id] = t;
+  }
+  return {epoche, aggiornato};
+}
+
+/* Ultimo valore valido ricevuto, riletto all'avvio prima di toccare la rete. */
+(function condivisaDallaMemoria(){
+  try{
+    const grezzo = mem.leggi(CHIAVE_CONDIVISA);
+    if(grezzo) condivisa = validaSync(JSON.parse(grezzo));
+  }catch(_){}
+})();
+
+let ultimoScarico = 0;
+async function scaricaSync(){
+  if(Date.now() - ultimoScarico < 5*60*1000) return;   // non piu' di una volta ogni 5 min
+  ultimoScarico = Date.now();
+  try{
+    const r = await fetch("sync.json?t=" + Date.now(), {cache:"no-store"});
+    if(!r.ok) throw new Error(r.status);
+    const valida = validaSync(await r.json());
+    if(!valida) throw new Error("contenuto non valido");
+    condivisa = valida;
+    mem.scrivi(CHIAVE_CONDIVISA, JSON.stringify({
+      versione:1,
+      aggiornato:new Date(valida.aggiornato).toISOString(),
+      epoche:Object.fromEntries(Object.entries(valida.epoche)
+              .map(([k,v]) => [k, new Date(v).toISOString()]))
+    }));
+    statoSync = "ok";
+  }catch(_){
+    statoSync = condivisa ? "ultimo noto" : "non ricevuta";
+  }
+  aggiornaRiferimento(); aggiornaProssimi();
+}
+let statoSync = "…";
 
 /* I browser possono sfrattare i dati dei siti poco visitati: iOS lo fa dopo
    7 giorni di inattivita'. Sarebbe esattamente la calibrazione a sparire,
@@ -430,12 +558,19 @@ const el = {
   altraVal:document.getElementById("altra-val"),
   orologio:document.getElementById("orologio"),
   riferimento:document.getElementById("riferimento"),
+  sync:document.getElementById("sync"),
   optPreavviso:document.getElementById("opt-preavviso"),
   optSuono:document.getElementById("opt-suono"),
   optSchermo:document.getElementById("opt-schermo"),
   btnCalibra:document.getElementById("btn-calibra"),
   btnReset:document.getElementById("btn-reset"),
   offline:document.getElementById("offline"),
+  pannelloPubblica:document.getElementById("pannello-pubblica"),
+  pubRepo:document.getElementById("pub-repo"),
+  pubToken:document.getElementById("pub-token"),
+  pubEsito:document.getElementById("pub-esito"),
+  btnPubblica:document.getElementById("btn-pubblica"),
+  btnScorda:document.getElementById("btn-scorda"),
   aggiorna:document.getElementById("aggiorna"),
   btnAggiorna:document.getElementById("btn-aggiorna")
 };
@@ -474,12 +609,35 @@ function aggiornaProssimi(){
   }
 }
 
+const quando = ms => new Date(ms).toLocaleString("it-IT",
+  {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+
+/* Il sottotitolo descrive il modello, quindi lo ricava dal modello. */
+(function scriviSottotitolo(){
+  const m = Math.floor(CICLO/60), s = CICLO % 60;
+  document.getElementById("sottotitolo").textContent =
+    "Senso unico alternato · ciclo di " + m + " min" + (s ? " " + s + " s" : "") +
+    " · verde " + VERDE + " s";
+})();
+
 function aggiornaRiferimento(){
-  const cal = calibrata(corrente);
-  el.riferimento.textContent = cal
-    ? "calibrato " + new Date(epocaDi(corrente)).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})
-    : "orari ufficiali";
-  el.btnReset.hidden = !cal;
+  const origine = origineDi(corrente);
+  const locale = calibrazioneLocale(corrente);
+
+  if(origine === "personale"){
+    const restano = Math.max(0, DURATA_LOCALE - (Date.now() - locale));
+    const ore = Math.floor(restano / 3600000), min = Math.round(restano % 3600000 / 60000);
+    el.riferimento.textContent = "personale, scade fra " + (ore ? ore + " h" : min + " min");
+  }else if(origine === "condivisa"){
+    el.riferimento.textContent = "condivisa del " + quando(condivisa.aggiornato);
+  }else{
+    el.riferimento.textContent = "orari ufficiali";
+  }
+
+  el.sync.textContent = statoSync;
+  // Il ripristino ha senso solo su una calibrazione personale: e' l'unica
+  // che questo dispositivo possa togliere di mezzo.
+  el.btnReset.hidden = origine !== "personale";
 }
 
 /* Stato dell'ultimo avviso emesso, per non ripeterlo a ogni fotogramma. */
@@ -593,7 +751,171 @@ el.btnReset.addEventListener("click", () => {
 });
 
 /* ===========================================================================
-   8. INSTALLAZIONE E USO SENZA RETE
+   8. PUBBLICAZIONE — solo il proprietario
+   ---------------------------------------------------------------------------
+   Su GitHub non esiste scrittura anonima: chi pubblica deve possedere una
+   credenziale. Il token e' un PAT "fine-grained" limitato a questo solo
+   repository e al permesso Contents, e vive esclusivamente in questo
+   dispositivo. Non deve MAI finire nel repository: da li' chiunque potrebbe
+   riscrivere l'app e servire codice arbitrario a tutti gli installati.
+
+   Il pannello compare solo con ?pubblica nell'indirizzo. E' comodita', non
+   sicurezza: cio' che protegge davvero e' il token, non il fatto di
+   nascondere il modulo.
+   =========================================================================== */
+
+const CHIAVE_TOKEN = "sp105.token";
+const CHIAVE_REPO  = "sp105.repo";
+const SCOSTAMENTO_MAX = 90;   // secondi oltre i quali si chiede conferma
+
+function base64utf8(s){
+  let b = "";
+  for(const x of new TextEncoder().encode(s)) b += String.fromCharCode(x);
+  return btoa(b);
+}
+
+/* Scostamento fra due epoche misurato DENTRO il ciclo e col segno piu' corto:
+   1310 s di differenza sono in realta' 10 s indietro, non 1310 s avanti. */
+function scostamento(a, b){
+  let d = ((a - b) / 1000) % CICLO;
+  if(d >  CICLO/2) d -= CICLO;
+  if(d < -CICLO/2) d += CICLO;
+  return d;
+}
+
+function esitoPub(testo, classe){
+  el.pubEsito.textContent = testo;
+  el.pubEsito.className = "esito" + (classe ? " " + classe : "");
+}
+
+async function pubblica(forzato){
+  const repo  = el.pubRepo.value.trim().replace(/^\/+|\/+$/g, "");
+  const token = el.pubToken.value.trim();
+  if(!/^[^/\s]+\/[^/\s]+$/.test(repo)) return esitoPub("Repository nel formato utente/nome.", "ko");
+  if(!token) return esitoPub("Manca il token.", "ko");
+
+  // Si pubblica cio' che vale adesso su questo dispositivo.
+  const epoche = {};
+  for(const id of Object.keys(DIREZIONI)) epoche[id] = epocaDi(DIREZIONI[id]);
+
+  /* Verosimiglianza: una ritaratura vera sposta la fase di pochi secondi.
+     Uno scarto grande e' quasi sempre un tocco sbagliato, e pubblicarlo
+     desincronizzerebbe tutti senza che nessuno capisca perche'. */
+  if(!forzato && condivisa){
+    for(const id of Object.keys(DIREZIONI)){
+      const d = Math.abs(scostamento(epoche[id], condivisa.epoche[id]));
+      if(d > SCOSTAMENTO_MAX){
+        el.btnPubblica.dataset.forza = "1";
+        el.btnPubblica.textContent = "Confermo, pubblica comunque";
+        return esitoPub("Sposterebbe " + DIREZIONI[id].nome + " di " + Math.round(d) +
+          " s rispetto alla calibrazione condivisa. Oltre " + SCOSTAMENTO_MAX +
+          " s di solito è un errore: premi di nuovo per confermare.", "ko");
+      }
+    }
+  }
+
+  const api = "https://api.github.com/repos/" + repo + "/contents/sync.json";
+  const intestazioni = {
+    "Authorization": "Bearer " + token,
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+
+  esitoPub("Pubblicazione in corso…");
+  try{
+    // GitHub pretende lo sha della versione attuale: e' cio' che impedisce di
+    // sovrascrivere alla cieca una modifica fatta nel frattempo.
+    let sha = null;
+    const lettura = await fetch(api, {headers:intestazioni, cache:"no-store"});
+    if(lettura.ok) sha = (await lettura.json()).sha;
+    else if(lettura.status === 401) throw new Error("token rifiutato");
+    else if(lettura.status === 404) sha = null;   // il file non c'e' ancora
+    else throw new Error("lettura fallita (" + lettura.status + ")");
+
+    const contenuto = {
+      versione: 1,
+      aggiornato: new Date().toISOString(),
+      nota: "Calibrazione pubblicata dall'app.",
+      epoche: Object.fromEntries(Object.entries(epoche)
+                .map(([k, v]) => [k, new Date(v).toISOString()]))
+    };
+
+    const scrittura = await fetch(api, {
+      method: "PUT",
+      headers: Object.assign({"Content-Type":"application/json"}, intestazioni),
+      body: JSON.stringify(Object.assign({
+        message: "Calibrazione semaforo " + new Date().toLocaleString("it-IT"),
+        content: base64utf8(JSON.stringify(contenuto, null, 2) + "\n")
+      }, sha ? {sha} : {}))
+    });
+
+    if(!scrittura.ok) throw new Error(
+      scrittura.status === 401 ? "token rifiutato" :
+      scrittura.status === 403 ? "permessi insufficienti sul repository" :
+      scrittura.status === 409 ? "modificato nel frattempo, riprova" :
+                                 "scrittura fallita (" + scrittura.status + ")");
+
+    mem.scrivi(CHIAVE_TOKEN, token);
+    mem.scrivi(CHIAVE_REPO, repo);
+    el.btnScorda.hidden = false;
+
+    // Promossa a condivisa: la copia personale ha esaurito il suo compito.
+    for(const id of Object.keys(DIREZIONI)) mem.togli(CHIAVE(id));
+    condivisa = {epoche, aggiornato: Date.parse(contenuto.aggiornato)};
+    mem.scrivi(CHIAVE_CONDIVISA, JSON.stringify(contenuto));
+    statoSync = "pubblicata ora";
+    aggiornaRiferimento(); aggiornaProssimi();
+    esitoPub("Pubblicata. Gli altri dispositivi la ricevono entro qualche minuto, " +
+             "il tempo che GitHub Pages ricostruisca il sito.", "ok");
+  }catch(e){
+    esitoPub("Non pubblicata: " + e.message +
+             ". La calibrazione resta valida su questo dispositivo.", "ko");
+  }
+}
+
+el.btnPubblica.addEventListener("click", () => {
+  const forza = el.btnPubblica.dataset.forza === "1";
+  delete el.btnPubblica.dataset.forza;
+  el.btnPubblica.textContent = "Pubblica per tutti";
+  pubblica(forza);
+});
+
+el.btnScorda.addEventListener("click", () => {
+  mem.togli(CHIAVE_TOKEN);
+  el.pubToken.value = "";
+  el.btnScorda.hidden = true;
+  esitoPub("Token dimenticato su questo dispositivo.");
+});
+
+function mostraPannelloPubblica(){
+  el.pannelloPubblica.hidden = false;
+  // Su utente.github.io/repo/ il repository si deduce dall'indirizzo.
+  el.pubRepo.value = mem.leggi(CHIAVE_REPO) ||
+    (location.hostname.endsWith(".github.io")
+      ? location.hostname.split(".")[0] + "/" + (location.pathname.split("/")[1] || "")
+      : "");
+  const salvato = mem.leggi(CHIAVE_TOKEN);
+  if(salvato){ el.pubToken.value = salvato; el.btnScorda.hidden = false; }
+  el.pannelloPubblica.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+/* Tre vie d'accesso, perche' l'app installata non ha barra degli indirizzi:
+   il parametro serve da desktop, i cinque tocchi dal telefono, e dove il
+   token e' gia' stato salvato il pannello resta semplicemente al suo posto. */
+if(new URLSearchParams(location.search).has("pubblica") || mem.leggi(CHIAVE_TOKEN)){
+  mostraPannelloPubblica();
+}
+
+let tocchi = 0, ultimoTocco = 0;
+document.querySelector("header h1").addEventListener("click", () => {
+  const ora = Date.now();
+  tocchi = (ora - ultimoTocco < 600) ? tocchi + 1 : 1;
+  ultimoTocco = ora;
+  if(tocchi >= 5){ tocchi = 0; mostraPannelloPubblica(); }
+});
+
+/* ===========================================================================
+   9. INSTALLAZIONE E USO SENZA RETE
    ---------------------------------------------------------------------------
    Il service worker richiede HTTPS (localhost escluso). Aperto da file:// non
    si registra: l'app funziona lo stesso, ma senza installazione e senza la
@@ -636,6 +958,14 @@ if("serviceWorker" in navigator){
 scegli(corrente);
 ciclaDisegno();
 rendiPersistente();
+
+/* La calibrazione condivisa si chiede DOPO il primo disegno: la pagina e' gia'
+   utilizzabile quando parte la richiesta, e se non arriva nulla non cambia
+   niente. Rientrando nell'app si ricontrolla, con il freno dei 5 minuti. */
+scaricaSync();
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "visible") scaricaSync();
+});
 </script>
 </body>
 </html>
