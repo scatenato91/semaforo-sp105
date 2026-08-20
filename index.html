@@ -300,13 +300,13 @@ button.azione.reset{color:var(--tenue);font-weight:500}
    Le uniche grandezze imposte sono le quattro durate di fase. Tutto il resto
    e' conseguenza del modulo, e non va MAI scritto nel codice.
 
-   In particolare l'anticipo giornaliero. 86400 s non e' un multiplo di 1356 s:
-   restano 972 s, quindi allo stesso orario del giorno dopo siamo 972 s dentro
-   il ciclo e il verde e' gia' passato da 16 min 12 s. E' un risultato, non una
+   In particolare l'anticipo giornaliero. 86400 s non e' un multiplo di 1050 s:
+   restano 300 s, quindi allo stesso orario del giorno dopo siamo 300 s dentro
+   il ciclo e il verde e' gia' passato da 5 minuti. E' un risultato, non una
    regola: programmarlo lo conterebbe due volte. Cambiando una durata di fase
    cambia da solo, come deve.
 
-   Gli istanti hanno l'offset +02:00 esplicito. Senza, "2026-08-16T16:23:10"
+   Gli istanti hanno l'offset +02:00 esplicito. Senza, "2026-08-20T21:53:20"
    verrebbe letto nel fuso del dispositivo: un telefono ancora su un altro
    fuso, o l'ora legale, sfaserebbero tutto. Il semaforo e' un temporizzatore
    fisico: conta l'istante assoluto, non l'ora sull'orologio.
@@ -317,22 +317,24 @@ button.azione.reset{color:var(--tenue);font-weight:500}
    perche' allungare il verde lasciando fisso il totale accorcia di nascosto
    un rosso. Qui allungare il verde allunga il ciclo, che e' il comportamento
    di un temporizzatore reale. */
-const VERDE  = 56;                              // misurato sul posto
-const ROSSO1 = 600, ROSSO2 = 600, ROSSO3 = 100; // invariati rispetto ai PDF
-const CICLO  = VERDE + ROSSO1 + ROSSO2 + ROSSO3;   // 1356 s = 22 min 36 s
+const VERDE  = 45;                                  // 45 s
+const ROSSO1 = 375, ROSSO2 = 525, ROSSO3 = 105;     // 6m15s + 8m45s + 1m45s
+const CICLO  = VERDE + ROSSO1 + ROSSO2 + ROSSO3;    // 1050 s = 17 min 30 s
 
-/* I due sensi condividono lo stesso periodo, quindi il loro sfasamento e'
-   costante per sempre: 456 s. Dentro un ciclo l'ordine e'
-     Itri→Sperlonga verde 0-56 · sgombero 400 s · Sperlonga→Itri verde 456-512
-     · sgombero 844 s
-   Non si sovrappongono. Le finestre restano diverse fra loro (6m40s contro
-   14m04s) ma sono entrambe ampie; con le epoche del 16 agosto la corta valeva
-   134 s. Cambiando un'epoca vanno rifatti i conti: vedi README. */
+/* Lo sfasamento fra i due sensi e' 525 s, cioe' ESATTAMENTE mezzo ciclo:
+     Itri→Sperlonga verde 0-45 · sgombero 480 s · Sperlonga→Itri verde 525-570
+     · sgombero 480 s
+   Le due finestre di transito sono identiche, 8 minuti ciascuna. E' la forma
+   che ha un senso unico alternato progettato bene, ed e' anche il motivo per
+   cui queste epoche sono affidabili: essendo state prese DENTRO LO STESSO
+   CICLO (distano mezzo ciclo), un eventuale errore sulla durata del ciclo non
+   si propaga sullo sfasamento. Con ancore prese a ore di distanza l'errore
+   veniva moltiplicato per il numero di cicli interposti. */
 const DIREZIONI = {
   si:{ id:"si", nome:"Sperlonga → Itri", breve:"Sperlonga→Itri",
-       epoca:Date.parse("2026-08-18T18:33:24+02:00") },
+       epoca:Date.parse("2026-08-20T21:53:20+02:00") },
   is:{ id:"is", nome:"Itri → Sperlonga", breve:"Itri→Sperlonga",
-       epoca:Date.parse("2026-08-18T12:01:36+02:00") }
+       epoca:Date.parse("2026-08-20T21:44:35+02:00") }
 };
 
 /* Posizione nel ciclo, in secondi con i decimali (servono all'anello). */

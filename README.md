@@ -19,21 +19,21 @@ verso terzi, funziona senza rete.
 Un istante di riferimento per direzione e l'operazione modulo:
 
 ```
-fasi   = verde 56 s + rosso 600 + rosso 600 + rosso 100
-ciclo  = somma delle fasi = 1356 s = 22 min 36 s
-epoche = Sperlonga→Itri  2026-08-18T18:33:24+02:00
-         Itri→Sperlonga  2026-08-18T12:01:36+02:00
-fase   = ((adesso - epoca) mod 1356 + 1356) mod 1356
-verde  ⟺ fase < 56
+fasi   = verde 45 s + rosso 375 + rosso 525 + rosso 105
+         (45 s · 6m15s · 8m45s · 1m45s — rossi totali 16m45s)
+ciclo  = somma delle fasi = 1050 s = 17 min 30 s
+epoche = Sperlonga→Itri  2026-08-20T21:53:20+02:00
+         Itri→Sperlonga  2026-08-20T21:44:35+02:00
+fase   = ((adesso - epoca) mod 1050 + 1050) mod 1050
+verde  ⟺ fase < 45
 ```
 
-Il verde di 56 s e l'epoca Itri→Sperlonga delle 10:41:00 sono **misurati sul
-posto** e sostituiscono i PDF, che indicavano 20 s e le 10:42:00. I tre rossi
-restano quelli dei PDF.
+Durate ed epoche sono **misurate sul posto** e sostituiscono integralmente i
+PDF di partenza, che descrivevano un ciclo da 1320 s con verde di 20 s.
 
 **Il ciclo è la somma delle fasi, non un numero indipendente.** Tenerlo
 separato ha già prodotto un errore: allungando il verde a totale fisso, un
-rosso si accorciava di nascosto. Qui allungare il verde allunga il ciclo, come
+rosso si accorciava di nascosto. Qui cambiare una fase cambia il ciclo, come
 farebbe un temporizzatore reale.
 
 Due punti da non toccare senza rileggere qui:
@@ -42,13 +42,13 @@ Due punti da non toccare senza rileggere qui:
 è conseguenza del modulo e non va mai scritto nel codice.
 
 L'anticipo giornaliero è il caso esemplare. 86400 s non è un multiplo di
-1356 s: restano 972 s, quindi allo stesso orario del giorno dopo il verde è
-già passato da 16 min 12 s. È un risultato, non una regola — programmarlo lo
+1050 s: restano 300 s, quindi allo stesso orario del giorno dopo il verde è
+già passato da **5 minuti**. È un risultato, non una regola — programmarlo lo
 conterebbe due volte. Cambiando una durata di fase cambia da sé.
 
-Con il verde da 20 s dei PDF il ciclo era 1320 s e lo stesso calcolo dava
-600 s, cioè i 10 minuti esatti da cui è partito il progetto: quel numero
-descriveva il vecchio ciclo, non una legge del semaforo.
+Con il ciclo da 1320 s dei PDF lo stesso calcolo dava 600 s, cioè i 10 minuti
+esatti da cui è partito il progetto: quel numero descriveva quel ciclo, non
+una legge del semaforo.
 
 **Le epoche hanno l'offset `+02:00` esplicito.** Senza, la stringa verrebbe
 letta nel fuso del dispositivo, e un telefono su un altro fuso — o il
@@ -59,86 +59,61 @@ temporizzatore fisico: conta l'istante assoluto, non l'ora sull'orologio.
 
 È la proprietà che conta per la sicurezza su una corsia unica. Le due
 direzioni condividono lo stesso periodo, quindi il loro sfasamento è
-**costante per sempre**: 456 s. Verificare un ciclo li verifica tutti.
+**costante per sempre**: 525 s, cioè **esattamente mezzo ciclo**. Verificare
+un ciclo li verifica tutti.
 
 Dentro un ciclo, con riferimento il verde Itri→Sperlonga:
 
 | da → a | cosa |
 |---|---|
-| 0 → 56 | **verde Itri→Sperlonga** |
-| 56 → 456 | entrambi rossi — sgombero **400 s** (6m40s) |
-| 456 → 512 | **verde Sperlonga→Itri** |
-| 512 → 1356 | entrambi rossi — sgombero **844 s** (14m04s) |
+| 0 → 45 | **verde Itri→Sperlonga** |
+| 45 → 525 | entrambi rossi — sgombero **480 s** (8m00s) |
+| 525 → 570 | **verde Sperlonga→Itri** |
+| 570 → 1050 | entrambi rossi — sgombero **480 s** (8m00s) |
 
-Nessuna sovrapposizione e alternanza sempre stretta. Forza bruta su 365
-giorni (46.513 verdi): zero sovrapposizioni, mai due verdi di fila nella
-stessa direzione, e **due soli valori di sgombero esistenti**, 400 e 844 s.
+Le due finestre di transito sono **identiche**: otto minuti per parte. È la
+forma di un senso unico alternato progettato bene, e nessuna delle due
+direzioni è penalizzata.
 
-Chi entra da **Itri** ha 6m40s per sgombrare, chi entra da **Sperlonga** ne ha
-14m04s. Un'alternanza perfettamente pari vorrebbe 622 s per parte: si
-otterrebbe spostando l'epoca Sperlonga→Itri di +222 s, cioè alle **18:37:06**.
-
-Con le epoche del 16 agosto la finestra corta valeva 134 s.
+Forza bruta su 365 giorni (60.069 verdi): zero sovrapposizioni, mai due verdi
+di fila nella stessa direzione, e **un solo valore di sgombero esistente**,
+480 s. Non un minimo e un massimo vicini: un unico valore, sempre.
 
 **Cambiando una delle due epoche o una qualsiasi durata, questi conti vanno
 rifatti.**
 
-### Il ciclo di 1356 s è confermato dai dati
+### Perché queste epoche sono affidabili
 
-Le due ancore Itri→Sperlonga distano esattamente **131 cicli, resto zero**:
+Le due ancore distano 525 s, cioè **mezzo ciclo: stanno dentro lo stesso
+ciclo**. È la differenza che conta rispetto alle versioni precedenti.
 
-```
-18 ago 12:01:36 − 16 ago 10:41:00 = 177636 s = 131 × 1356 + 0
-```
+Lo sfasamento è `differenza − n × ciclo`, dove `n` è il numero di cicli interi
+fra le due ancore. Quindi la sensibilità all'errore sul ciclo è **−n**:
 
-È la verifica più forte che abbiamo. Su 131 cicli, un errore anche di 0,1 s
-per ciclo avrebbe accumulato 13 secondi di scarto. Se le 12:01:36 sono
-un'osservazione indipendente, il ciclo è confermato entro ~**0,01 s per
-ciclo** — e questo *elimina* il problema di amplificazione descritto sotto,
-che richiedeva il ciclo esatto entro ±1,8 s.
+| epoche | distanza | n | un secondo di errore sul ciclo sposta lo sfasamento di |
+|---|---:|---:|---:|
+| 16 ago (10:41 / 16:23) | 20530 s | 15 | 15 s |
+| 20 ago (12:01 / 18:33) | 23508 s | 17 | 17 s |
+| **20 ago (21:44 / 21:53)** | **525 s** | **0** | **0 s** |
 
-L'ancora Sperlonga→Itri è invece spostata di **+266 s** rispetto al 16 agosto
-(133 cicli + 266 s): è quella correzione che porta la finestra corta da 134 s
-a 400 s.
+> **La data delle epoche conta.** Sbagliarla di due giorni sposta la fase di
+> `172800 mod 1050 = 600 s`, cioè dieci minuti su ogni verde, pur lasciando
+> intatto lo sfasamento fra i due sensi. Le date vanno sempre scritte per
+> esteso e verificate, non dedotte.
 
-> Se invece le 12:01:36 fossero state *calcolate* con questo stesso modello, la
-> coincidenza è circolare e non dimostra nulla. Vale solo se osservata.
+Con `n = 0` l'amplificazione sparisce: un errore sulla durata del ciclo non
+tocca affatto lo sfasamento fra i due sensi, perché non c'è nessun ciclo
+intero interposto da moltiplicare. L'unico errore residuo è quello del
+cronometro.
 
-### L'amplificazione, e perché ora conta meno
-
-Le epoche attuali distano 23508 s, cioè poco più di **17 cicli**. Lo scarto è
-`23508 − 17 × ciclo`, quindi:
-
-> **un secondo di errore sul ciclo sposta lo sfasamento fra i due sensi di
-> diciassette secondi.**
-
-| ciclo | scarto | sgombero corto | lungo |
-|---:|---:|---:|---:|
-| 1352 | 524 | 468 s | 772 s |
-| 1354 | 490 | 434 s | 808 s |
-| **1356** | **456** | **400 s** | **844 s** |
-| 1358 | 422 | 366 s | 880 s |
-| 1360 | 388 | 332 s | 916 s |
-
-Per tenere lo sfasamento entro ±30 s serve il ciclo entro ±1,8 s. La verifica
-dei 131 cicli qui sopra lo dà entro ~0,01 s, quindi il margine c'è tutto —
-**purché quell'ancora sia osservata e non calcolata**.
-
-Resta il fatto che le due epoche sono prese a 6h32m di distanza: la misura
-diretta descritta qui sotto rimane il modo più solido di fissare lo scarto.
-
-### Come chiudere la questione con una misura sola
-
-**Cronometrare i due verdi nello stesso ciclo**, non a ore di distanza. Basta
-usare l'app:
+**È il motivo per cui misurare i due verdi nello stesso ciclo è la procedura
+corretta**, e va rifatta così ogni volta che serve ricalibrare:
 
 1. seleziona Itri→Sperlonga e premi *"il verde è scattato adesso"* allo scatto;
 2. resta lì, passa a Sperlonga→Itri e premi allo scatto del suo verde.
 
-Così lo sfasamento è **misurato direttamente**, con l'errore del tuo pollice
-(un secondo) invece che quindici volte l'errore sul ciclo. Poi *Pubblica per
-tutti* lo rende definitivo — la guardia dei 90 s chiederà conferma, ed è il
-caso in cui va data.
+Poi *Pubblica per tutti* lo rende definitivo — la guardia dei 90 s chiederà
+conferma, ed è il caso in cui va data.
 
 ## Calibrazione condivisa
 
